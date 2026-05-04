@@ -95,6 +95,9 @@ jobs:
     - name: 更新 & 安装 feeds & 执行脚本
       run: |
         cd openwrt
+        # 添加下面这一行，强制让 git 使用 GitHub 提供的临时 Token 进行认证
+        git config --global url."https://${{ github.token }}@github.com/".insteadOf "https://github.com/"
+
         git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git config --global user.name "github-actions[bot]"
         #git fetch https://github.com/padavanonly/immortalwrt-mt798x
@@ -108,14 +111,15 @@ jobs:
         # 替换原版 mosdns 防止 luci 界面编译失败
         rm -rf ./feeds/packages/net/mosdns
         cp -r -f ./feeds/smpackage/mosdns ./feeds/packages/net/mosdns
-        # 安装 golang 1.23 使用kenzok8源（修复git认证问题）
+        # 安装 golang 1.23 使用kenzok8源
         rm -rf feeds/packages/lang/golang
-        git clone https://github.com/kenzok8/golang.git feeds/packages/lang/golang --depth 1
-        # 替换passwall（使用git协议，免认证，速度更快）
+        git clone https://github.com/kenzok8/golang feeds/packages/lang/golang
+        # 替换一下passwall和xray-core为官方源而非immortalwrt的源
         rm -rf feeds/luci/applications/luci-app-passwall/
-        rm -rf feeds/packages/net/{xray-core,xray-plugin}
-        git clone https://github.com/xiaorouji/openwrt-passwall.git package/luci-app-passwall --depth 1
-        git clone https://github.com/xiaorouji/openwrt-passwall-packages.git package/luci-app-passwall-packages --depth 1
+        rm -rf feeds/packages/net/xray-core/
+        rm -rf feeds/packages/net/xray-plugin/
+        git clone https://github.com/xiaorouji/openwrt-passwall package/luci-app-passwall
+        git clone https://github.com/xiaorouji/openwrt-passwall-packages package/luci-app-passwall-packages
         # 重新安装一次 防止依赖错误 强制override保证版本比immortalwrt官方新
         ./scripts/feeds install -a -f
         chmod +x $GITHUB_WORKSPACE/$DIY_SH && $GITHUB_WORKSPACE/$DIY_SH
