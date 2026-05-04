@@ -11,7 +11,6 @@
 name: Build ImmortalWrt-mt798x
 
 permissions: write-all
-# 开启写权限，防止无法上传到release
 
 on:
   workflow_dispatch:
@@ -35,11 +34,12 @@ env:
   UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: false
   UPLOAD_RELEASE: true
-  TZ: Asia/Shanghai
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      TZ: Asia/Shanghai
 
     steps:
     - name: 检查
@@ -82,7 +82,6 @@ jobs:
     - name: 克隆源码
       working-directory: /workdir
       run: |
-        # 源码克隆也添加Token认证，兜底防止私有仓库/限流认证问题
         git clone https://${{ github.token }}@${REPO_URL#https://} openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
@@ -96,132 +95,31 @@ jobs:
     - name: 更新 & 安装 feeds & 执行脚本
       run: |
         cd openwrt
-        # ============== 核心修复：认证配置前置，确保所有Git操作100%生效 ==============
-        # 强制全局Git使用GitHub临时Token认证，优先级最高
         git config --global url."https://${{ github.token }}@github.com/".insteadOf "https://github.com/"
         git config --global url."https://${{ github.token }}@github.com/".insteadOf "git@github.com:"
-        # 配置Git用户信息
         git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git config --global user.name "github-actions[bot]"
 
-        # 原分支合并代码（保留注释不影响）
-        #git fetch https://github.com/padavanonly/immortalwrt-mt798x
-        #git merge FETCH_HEAD
-
-        # 添加第三方软件源
         sed -i '$a src-git smpackage https://github.com/kenzok8/small-package' feeds.conf.default
         sed -i '$a src-git istore https://github.com/linkease/istore;main' feeds.conf.default
-        
-        # 更新并安装feeds
         ./scripts/feeds update -a && ./scripts/feeds install -a
 
-        # 防止包冲突
         rm -rf feeds/smpackage/{base-files,dnsmasq,firewall*,fullconenat,libnftnl,nftables,ppp,opkg,ucl,upx,vsftpd-alt,miniupnpd-iptables,wireless-regdb}
         rm -rf feeds/luci/applications/luci-app-mosdns
-        # 替换原版 mosdns 防止 luci 界面编译失败
         rm -rf ./feeds/packages/net/mosdns
         cp -r -f ./feeds/smpackage/mosdns ./feeds/packages/net/mosdns
 
-        # 安装 golang ，使用kenzok8源，添加Token认证
         rm -rf feeds/packages/lang/golang
         git clone https://${{ github.token }}@github.com/kenzok8/golang feeds/packages/lang/golang
 
-        # ============== 核心修复：passwall系列克隆强制嵌入Token，解决原报错问题 ==============
-        # 替换passwall和xray-core为官方源，彻底清理残留后克隆
         rm -rf feeds/luci/applications/luci-app-passwall/
         rm -rf feeds/packages/net/xray-core/
         rm -rf feeds/packages/net/xray-plugin/
         rm -rf package/luci-app-passwall
         rm -rf package/luci-app-passwall-packages
-        # 克隆添加Token认证，彻底解决密码读取失败问题
         git clone https://${{ github.token }}@github.com/xiaorouji/openwrt-passwall package/luci-app-passwall
-        git clone https://${{ github.token }}@github.com/xiaorouji/openwrt-passwall-packages pac  UPLOAD_RELEASE: true
-  TZ: Asia/Shanghai
+        git clone https://${{ github.token }}@github.com/xiaorouji/openwrt-passwall-packages package/luci-app-passwall-packages
 
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-
-    steps:
-    - name: 检查
-      uses: actions/checkout@main
-
-    - name: 查看Action服务器性能
-      run: |
-        echo "警告⚠"
-        echo "分配的服务器性能有限，若选择的插件过多，务必注意CPU性能！"
-        echo -e "已知CPU型号(降序): 7763，8370C，8272CL，8171M，E5-2673\n"
-        echo "--------------------------CPU信息--------------------------"
-        echo "CPU物理数量: $(cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l)"
-        echo "CPU核心数量: $(nproc)"
-        echo -e "CPU型号信息:$(cat /proc/cpuinfo | grep -m1 name | awk -F: '{print $2}')\n"
-        echo "--------------------------内存信息--------------------------"
-        echo "已安装内存详细信息:"
-        echo -e "$(sudo lshw -short -C memory | grep GiB)\n"
-        echo "--------------------------硬盘信息--------------------------"
-        echo "硬盘数量: $(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
-
-    - name: 初始化环境
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        echo "USE_MTWIFI_CFG=${{ github.event.inputs.USE_MTWIFI_CFG }}" >> $GITHUB_ENV
-        echo "USE_NX30PRO_EEPROM=${{ github.event.inputs.USE_NX30PRO_EEPROM }}" >> $GITHUB_ENV
-        chmod +x $FREE_DISK_SH && $FREE_DISK_SH
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        sudo -E apt-get -qq update -y
-        sudo -E apt-get -qq full-upgrade -y
-        chmod +x $ENV_SH && $ENV_SH
-        sudo timedatectl set-timezone "$TZ"
-        sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
-
-    - name: 检查空间使用情况
-      if: (!cancelled())
-      run: df -hT
-
-    - name: 克隆源码
-      working-directory: /workdir
-      run: |
-        git clone $REPO_URL openwrt
-        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-
-    - name: 开启缓存
-      uses: klever1988/cachewrtbuild@main
-      with:
-        ccache: 'true'
-        mixkey: 'openwrt21-cortexa53'
-        prefix: ${{ github.workspace }}/openwrt
-
-    - name: 更新 & 安装 feeds & 执行脚本
-      run: |
-        cd openwrt
-        # 添加下面这一行，强制让 git 使用 GitHub 提供的临时 Token 进行认证
-        git config --global url."https://${{ github.token }}@github.com/".insteadOf "https://github.com/"
-
-        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git config --global user.name "github-actions[bot]"
-        #git fetch https://github.com/padavanonly/immortalwrt-mt798x
-        #git merge FETCH_HEAD
-        sed -i '$a src-git smpackage https://github.com/kenzok8/small-package' feeds.conf.default
-        sed -i '$a src-git istore https://github.com/linkease/istore;main' feeds.conf.default
-        ./scripts/feeds update -a && ./scripts/feeds install -a
-        # 防止包冲突
-        rm -rf feeds/smpackage/{base-files,dnsmasq,firewall*,fullconenat,libnftnl,nftables,ppp,opkg,ucl,upx,vsftpd-alt,miniupnpd-iptables,wireless-regdb}
-        rm -rf feeds/luci/applications/luci-app-mosdns
-        # 替换原版 mosdns 防止 luci 界面编译失败
-        rm -rf ./feeds/packages/net/mosdns
-        cp -r -f ./feeds/smpackage/mosdns ./feeds/packages/net/mosdns
-        # 安装 golang 1.23 使用kenzok8源
-        rm -rf feeds/packages/lang/golang
-        git clone https://github.com/kenzok8/golang feeds/packages/lang/golang
-        # 替换一下passwall和xray-core为官方源而非immortalwrt的源
-        rm -rf feeds/luci/applications/luci-app-passwall/
-        rm -rf feeds/packages/net/xray-core/
-        rm -rf feeds/packages/net/xray-plugin/
-        git clone https://github.com/xiaorouji/openwrt-passwall package/luci-app-passwall
-        git clone https://github.com/xiaorouji/openwrt-passwall-packages package/luci-app-passwall-packages
-        # 重新安装一次 防止依赖错误 强制override保证版本比immortalwrt官方新
         ./scripts/feeds install -a -f
         chmod +x $GITHUB_WORKSPACE/$DIY_SH && $GITHUB_WORKSPACE/$DIY_SH
 
@@ -238,7 +136,6 @@ jobs:
     - name: 下载文件
       run: |
         cd openwrt
-        # chmod +x $GITHUB_WORKSPACE/$CLASH_CORE && $GITHUB_WORKSPACE/$CLASH_CORE
         make defconfig
         make download -j8 V=10
         find dl -size -1024c -exec ls -l {} \;
@@ -268,9 +165,9 @@ jobs:
       if: steps.compile.outputs.status == 'success'
       run: |
         cd openwrt/bin/targets/*/*
-        rm -rf *.buildinfo 
-        rm -rf *.json 
-        rm -rf *.manifest 
+        rm -rf *.buildinfo
+        rm -rf *.json
+        rm -rf *.manifest
         rm -rf packages
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
