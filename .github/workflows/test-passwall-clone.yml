@@ -1,47 +1,47 @@
-name: 测试 passwall 相关克隆
+name: 测试 passwall 克隆（新地址）
 
 on:
-  workflow_dispatch:   # 允许手动触发
+  workflow_dispatch:   # 手动触发
 
 jobs:
   debug-clone:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出基础源码（模拟构建环境）
+      - name: 检出基础源码（模拟构建环境，仅用于提供目录结构）
         uses: actions/checkout@v4
         with:
-          repository: immortalwrt/immortalwrt   # 根据你实际用的源码调整
+          repository: immortalwrt/immortalwrt   # 根据你实际使用的源码调整
           path: openwrt
           ref: master
 
-      - name: 初始化 feeds 目录结构（如果不存在）
+      - name: 准备 feeds 和 package 目录
         working-directory: openwrt
         run: |
-          # 确保 feeds 相关目录存在，避免 rm -rf 报错
           mkdir -p feeds/packages/lang
           mkdir -p feeds/luci/applications
           mkdir -p feeds/packages/net
           mkdir -p package
 
-      - name: 执行出错的步骤（详细输出）
+      - name: 执行修改后的克隆步骤
         working-directory: openwrt
         shell: bash
         run: |
-          set -x   # 打印每条命令的展开结果
-          # 安装 golang 1.23 使用kenzok8源
+          set -x
+
+          # 安装 golang 1.23 使用 kenzok8 源
           rm -rf feeds/packages/lang/golang
           git clone https://github.com/kenzok8/golang feeds/packages/lang/golang
 
-          # 替换 passwall 为官方源
+          # 移除 immortalwrt 自带的 passwall 相关包
           rm -rf feeds/luci/applications/luci-app-passwall/
           rm -rf feeds/packages/net/xray-core/
           rm -rf feeds/packages/net/xray-plugin/
 
-          echo "---------- 开始克隆 passwall ----------"
-          git clone --verbose https://github.com/xiaorouji/openwrt-passwall package/luci-app-passwall
-          echo "---------- 开始克隆 passwall-packages ----------"
-          git clone --verbose https://github.com/xiaorouji/openwrt-passwall-packages package/luci-app-passwall-packages
+          echo "---------- 开始克隆 passwall (新地址) ----------"
+          git clone --verbose https://github.com/openwrt-passwall/openwrt-passwall package/luci-app-passwall
 
-          # 下面两步可能因为缺少 feed 配置而失败，仅做参考
-          ./scripts/feeds install -a -f || echo "feeds install 失败（可能缺少 feeds.conf）"
-          # chmod +x $GITHUB_WORKSPACE/$DIY_SH && $GITHUB_WORKSPACE/$DIY_SH  # 此行已注释，因为 $DIY_SH 未定义
+          echo "---------- 开始克隆 passwall-packages (新地址) ----------"
+          git clone --verbose https://github.com/openwrt-passwall/openwrt-passwall-packages package/luci-app-passwall-packages
+
+          # 后续 feeds 安装（可能因缺少 feeds.conf 失败，只做参考）
+          ./scripts/feeds install -a -f || echo "feeds install 失败，请确保 feeds.conf 已配置"
